@@ -6,3 +6,7 @@ obj/
 *.userosscache
 *.sln.docstates
 
+# Local client-delivery artifacts. Fixed WebView2 Runtime binaries are too large for source control.
+发布给客户/
+发布给客户_免安装版/
+发布给客户_免安装版.zip

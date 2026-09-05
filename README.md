@@ -4,7 +4,7 @@
 
 ## 当前范围
 
-- 手动在内置 WebView2 中登录孔夫子旧书网，复用本机登录资料
+- 手动在内置 WebView2 中登录孔夫子旧书网，复用本机登录资料；免安装交付包随附固定版本 WebView2 Runtime，不依赖客户电脑预先安装该组件
 - 固定五个独立监控任务：每个任务分别设置关键词、作者、出版社、最低/最高商品价格和 1～15 秒刷新间隔
 - 五个任务各自拥有官网结果页、筛选、最低标价选择、本地去重、轮次和暂停状态；仅共用本机 WebView2 登录 Cookie
 - 首次进入官网高级搜索结果页后，未发现符合条件的新品时按间隔刷新同一结果页；配置变更、登录失效或页面不再是对应结果页时才重新进入搜索。刷新仍会向官网请求最新结果，不能绕过网站的人机验证或访问频率限制
@@ -36,10 +36,21 @@
 
 ## 构建
 
-要求：Windows 10 1809（17763）或更高版本、.NET 5 SDK、Microsoft Edge WebView2 Runtime。
+源码构建要求：Windows 10 1809（17763）或更高版本、.NET 5 SDK、Microsoft Edge WebView2 Runtime。
 
 ```powershell
 dotnet build .\KongfzBookMonitor.Windows\KongfzBookMonitor.Windows.csproj
 ```
 
 本次提交不包含订单确认或支付自动化。
+
+## 免安装交付包
+
+面向客户的免安装包不是只包含一个 EXE：它必须同时保留
+`KongfzBookMonitor.Windows.exe` 与同目录的 `WebView2FixedRuntime` 文件夹。请将整个
+交付文件夹压缩后发送给客户；客户解压到本机磁盘后，双击 EXE 即可，不需要另行安装
+.NET 或 WebView2 Runtime。不要从压缩包内直接运行，也不要只单独复制 EXE。
+
+固定版本 WebView2 Runtime 不会自动更新，发布新版软件时应一并更新该运行时。固定版本
+不能从网络共享路径直接运行；Windows 10 首次启动时，软件会按 Microsoft WebView2 的要求
+配置所需的本地读取权限。

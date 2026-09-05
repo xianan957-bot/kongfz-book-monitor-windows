@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using KongfzBookMonitor.Windows;
 
@@ -15,6 +16,7 @@ internal static class Program
             NotifiesOnlyTheLowestPriceChosenForCheckout();
             RetriesOfficialPurchaseOnceAfterManualVerification();
             KeepsFiveRuleConfigurationsIndependent();
+            UsesPackagedFixedWebView2RuntimeWhenPresent();
             ExpiresAtTheConfiguredLocalDeadline();
             Console.WriteLine("All regression checks passed.");
             return 0;
@@ -197,6 +199,39 @@ internal static class Program
             "The app must remain unavailable after the deadline.");
         Assert(UsageExpirationPolicy.GetTimeUntilExpiration(deadline.AddTicks(-1)) == TimeSpan.FromTicks(1),
             "The expiration timer did not calculate the final pre-deadline interval correctly.");
+    }
+
+    private static void UsesPackagedFixedWebView2RuntimeWhenPresent()
+    {
+        var temporaryRoot = Path.Combine(Path.GetTempPath(), $"kongfz-webview2-test-{Guid.NewGuid():N}");
+        var runtimeDirectory = Path.Combine(temporaryRoot, WebViewEnvironmentFactory.FixedRuntimeDirectoryName);
+
+        try
+        {
+            Directory.CreateDirectory(runtimeDirectory);
+            File.WriteAllText(Path.Combine(runtimeDirectory, "msedgewebview2.exe"), string.Empty);
+
+            Assert(WebViewEnvironmentFactory.ResolvePackagedFixedRuntimePath(temporaryRoot) == runtimeDirectory,
+                "The packaged fixed WebView2 Runtime was not selected when its executable was present.");
+
+            File.Delete(Path.Combine(runtimeDirectory, "msedgewebview2.exe"));
+            var versionedRuntimeDirectory = Path.Combine(runtimeDirectory, "Microsoft.WebView2.FixedVersionRuntime.test.x64");
+            Directory.CreateDirectory(versionedRuntimeDirectory);
+            File.WriteAllText(Path.Combine(versionedRuntimeDirectory, "msedgewebview2.exe"), string.Empty);
+            Assert(WebViewEnvironmentFactory.ResolvePackagedFixedRuntimePath(temporaryRoot) == versionedRuntimeDirectory,
+                "The version-named directory produced by the official fixed-runtime CAB was not selected.");
+
+            Assert(WebViewEnvironmentFactory.ResolvePackagedFixedRuntimePath(Path.Combine(temporaryRoot, "missing")) is null,
+                "A missing packaged WebView2 Runtime must not be treated as usable.");
+            Assert(WebViewEnvironmentFactory.RequiresWindows10FixedRuntimeAccess(new Version(10, 0, 19045)),
+                "Windows 10 must receive the fixed WebView2 Runtime access configuration.");
+            Assert(!WebViewEnvironmentFactory.RequiresWindows10FixedRuntimeAccess(new Version(10, 0, 22631)),
+                "Windows 11 must not need the Windows 10 fixed-runtime access configuration.");
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryRoot)) Directory.Delete(temporaryRoot, recursive: true);
+        }
     }
 
     private static void Assert(bool condition, string message)
