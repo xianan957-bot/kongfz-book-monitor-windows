@@ -233,7 +233,7 @@ public sealed class MonitorController : IDisposable
             return false;
         }
 
-        foreach (var item in newlyMatchedItems)
+        foreach (var item in NotificationItemsForRound(newlyMatchedItems, currentMatchedItems))
         {
             MatchedItem?.Invoke(item);
         }
@@ -243,14 +243,34 @@ public sealed class MonitorController : IDisposable
         // actual lowest price from all currently rendered matching candidates.
         if (newlyMatchedItems.Count == 0) return false;
 
-        var lowestPricedItem = currentMatchedItems
+        var lowestPricedItem = SelectLowestPricedItem(currentMatchedItems);
+        if (lowestPricedItem is null) return false;
+
+        return await RequestCheckoutAsync(lowestPricedItem, cancellationToken);
+    }
+
+    // Windows queues each balloon separately. A result page can contain many
+    // matches, but this round can only lead to one official checkout attempt,
+    // so notify only for that same lowest-price item.
+    internal static IReadOnlyList<KongfzItem> NotificationItemsForRound(
+        IReadOnlyList<KongfzItem> newlyMatchedItems,
+        IReadOnlyList<KongfzItem> currentMatchedItems)
+    {
+        if (newlyMatchedItems.Count == 0) return Array.Empty<KongfzItem>();
+
+        var lowestPricedItem = SelectLowestPricedItem(currentMatchedItems);
+        return lowestPricedItem is null
+            ? Array.Empty<KongfzItem>()
+            : new[] { lowestPricedItem };
+    }
+
+    private static KongfzItem? SelectLowestPricedItem(IReadOnlyList<KongfzItem> items)
+    {
+        return items
             .Where(item => item.Price.HasValue)
             .OrderBy(item => item.Price!.Value)
             .ThenBy(item => item.ItemId, StringComparer.Ordinal)
             .FirstOrDefault();
-        if (lowestPricedItem is null) return false;
-
-        return await RequestCheckoutAsync(lowestPricedItem, cancellationToken);
     }
 
     private async Task<bool> RequestCheckoutAsync(KongfzItem item, CancellationToken cancellationToken)

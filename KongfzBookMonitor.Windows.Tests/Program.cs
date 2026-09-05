@@ -12,6 +12,7 @@ internal static class Program
         {
             KeepsOfficiallyFilteredCardWhenCardMetadataIsMissing();
             ReadsTheListingPriceBeforeFreightText();
+            NotifiesOnlyTheLowestPriceChosenForCheckout();
             Console.WriteLine("All regression checks passed.");
             return 0;
         }
@@ -82,6 +83,40 @@ internal static class Program
         var price = KongfzSearchClient.ParseListingPrice("¥6.00 快递 ¥8.00");
         Assert(price == 6.0,
             "The first currency amount on a result card must be read as the listing price, not discarded with freight text.");
+    }
+
+    private static void NotifiesOnlyTheLowestPriceChosenForCheckout()
+    {
+        var seventeenYuanNewItem = new KongfzItem
+        {
+            ItemId = "new-17",
+            ItemUrl = "https://book.kongfz.com/1/new-17",
+            Title = "针灸大成",
+            Price = 17.0,
+        };
+        var fifteenYuanNewItem = new KongfzItem
+        {
+            ItemId = "new-15",
+            ItemUrl = "https://book.kongfz.com/1/new-15",
+            Title = "针灸大成",
+            Price = 15.8,
+        };
+        var sixYuanLowestCurrentItem = new KongfzItem
+        {
+            ItemId = "current-6",
+            ItemUrl = "https://book.kongfz.com/1/current-6",
+            Title = "针灸大成",
+            Price = 6.0,
+        };
+
+        var notificationItems = MonitorController.NotificationItemsForRound(
+            new[] { seventeenYuanNewItem, fifteenYuanNewItem },
+            new[] { seventeenYuanNewItem, fifteenYuanNewItem, sixYuanLowestCurrentItem });
+
+        Assert(notificationItems.Count == 1,
+            "A monitoring round must produce only one notification, not one for every matching card.");
+        Assert(notificationItems[0].ItemId == sixYuanLowestCurrentItem.ItemId,
+            "The notification must describe the same lowest-price item selected for official checkout.");
     }
 
     private static void Assert(bool condition, string message)
