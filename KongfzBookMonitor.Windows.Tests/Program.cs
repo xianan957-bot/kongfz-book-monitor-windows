@@ -13,6 +13,7 @@ internal static class Program
             KeepsOfficiallyFilteredCardWhenCardMetadataIsMissing();
             ReadsTheListingPriceBeforeFreightText();
             NotifiesOnlyTheLowestPriceChosenForCheckout();
+            RetriesOfficialPurchaseOnceAfterManualVerification();
             Console.WriteLine("All regression checks passed.");
             return 0;
         }
@@ -117,6 +118,18 @@ internal static class Program
             "A monitoring round must produce only one notification, not one for every matching card.");
         Assert(notificationItems[0].ItemId == sixYuanLowestCurrentItem.ItemId,
             "The notification must describe the same lowest-price item selected for official checkout.");
+    }
+
+    private static void RetriesOfficialPurchaseOnceAfterManualVerification()
+    {
+        Assert(MonitorController.ShouldRequestCheckoutForRound(
+                newlyMatchedItemCount: 0,
+                retryCheckoutAfterVerification: true),
+            "After a user completes verification, the current result page must get one official purchase retry even when its items were already processed.");
+        Assert(!MonitorController.ShouldRequestCheckoutForRound(
+                newlyMatchedItemCount: 0,
+                retryCheckoutAfterVerification: false),
+            "Normal monitoring must still wait for a genuinely new matching item.");
     }
 
     private static void Assert(bool condition, string message)

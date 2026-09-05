@@ -16,7 +16,7 @@ public sealed class MonitorController : IDisposable
     private Task? _monitoringTask;
     private int _completedRounds;
     private bool _pausedForOfficialCheckout;
-    private bool _establishBaselineAfterVerification;
+    private bool _retryCheckoutAfterVerification;
 
     public MonitorController(
         MonitorConfigStore configStore,
@@ -48,7 +48,7 @@ public sealed class MonitorController : IDisposable
         _cancellation?.Dispose();
         _completedRounds = 0;
         _pausedForOfficialCheckout = false;
-        _establishBaselineAfterVerification = false;
+        _retryCheckoutAfterVerification = false;
         _cancellation = new CancellationTokenSource();
         IsRunning = true;
         StatusChanged?.Invoke("监控状态：运行中");
@@ -139,8 +139,8 @@ public sealed class MonitorController : IDisposable
                         await WaitForManualVerificationAsync(cancellationToken);
                         if (!cancellationToken.IsCancellationRequested)
                         {
-                            _establishBaselineAfterVerification = true;
-                            StatusChanged?.Invoke("监控状态：验证完成，继续监控");
+                            _retryCheckoutAfterVerification = true;
+                            StatusChanged?.Invoke("监控状态：验证完成，正在重新检查当前结果");
                         }
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -198,7 +198,8 @@ public sealed class MonitorController : IDisposable
         MonitorConfig config,
         CancellationToken cancellationToken)
     {
-        var establishBaseline = _establishBaselineAfterVerification;
+        var retryCheckoutAfterVerification = _retryCheckoutAfterVerification;
+        _retryCheckoutAfterVerification = false;
         var newlyMatchedItems = new List<KongfzItem>();
         var currentMatchedItems = new List<KongfzItem>();
 
@@ -223,25 +224,18 @@ public sealed class MonitorController : IDisposable
             }
         }
 
-        if (establishBaseline)
-        {
-            // Results shown immediately after a human verification are the
-            // existing page backlog, not a reliable newly listed batch. Record
-            // them for deduplication, then resume normal monitoring from the
-            // following polling round without alerting or opening checkout.
-            _establishBaselineAfterVerification = false;
-            return false;
-        }
-
         foreach (var item in NotificationItemsForRound(newlyMatchedItems, currentMatchedItems))
         {
             MatchedItem?.Invoke(item);
         }
 
-        // Keep new-item monitoring semantics: a purchase attempt starts only
-        // when this round has a new matching result. When it does, pick the
-        // actual lowest price from all currently rendered matching candidates.
-        if (newlyMatchedItems.Count == 0) return false;
+        // Normal monitoring starts a purchase attempt only for a new matching
+        // result. After a human verification, retry exactly once against the
+        // recovered official result page because its cards may already be in
+        // the local de-duplication store.
+        if (!ShouldRequestCheckoutForRound(
+                newlyMatchedItems.Count,
+                retryCheckoutAfterVerification)) return false;
 
         var lowestPricedItem = SelectLowestPricedItem(currentMatchedItems);
         if (lowestPricedItem is null) return false;
@@ -262,6 +256,13 @@ public sealed class MonitorController : IDisposable
         return lowestPricedItem is null
             ? Array.Empty<KongfzItem>()
             : new[] { lowestPricedItem };
+    }
+
+    internal static bool ShouldRequestCheckoutForRound(
+        int newlyMatchedItemCount,
+        bool retryCheckoutAfterVerification)
+    {
+        return newlyMatchedItemCount > 0 || retryCheckoutAfterVerification;
     }
 
     private static KongfzItem? SelectLowestPricedItem(IReadOnlyList<KongfzItem> items)
