@@ -9,7 +9,7 @@ namespace KongfzBookMonitor.Windows
 
 public sealed class MonitorController : IDisposable
 {
-    private readonly MonitorConfigStore _configStore;
+    private readonly IMonitorConfigStore _configStore;
     private readonly ProcessedItemStore _processedItems;
     private readonly KongfzSearchClient _searchClient;
     private CancellationTokenSource? _cancellation;
@@ -19,7 +19,7 @@ public sealed class MonitorController : IDisposable
     private bool _retryCheckoutAfterVerification;
 
     public MonitorController(
-        MonitorConfigStore configStore,
+        IMonitorConfigStore configStore,
         ProcessedItemStore processedItems,
         KongfzSearchClient searchClient)
     {

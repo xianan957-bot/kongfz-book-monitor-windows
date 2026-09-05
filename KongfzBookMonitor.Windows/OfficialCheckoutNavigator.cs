@@ -66,15 +66,22 @@ internal sealed class OfficialCheckoutNavigator : IDisposable
 
     private readonly WebView2 _webView;
     private readonly CoreWebView2Environment _environment;
+    private readonly string _checkoutWindowTitle;
     private DateTime _acceptCheckoutPopupUntilUtc;
     private TaskCompletionSource<bool>? _checkoutOpened;
     private CheckoutBrowserWindow? _checkoutWindow;
     private bool _isDisposed;
 
-    public OfficialCheckoutNavigator(WebView2 webView, CoreWebView2Environment environment)
+    public OfficialCheckoutNavigator(
+        WebView2 webView,
+        CoreWebView2Environment environment,
+        string? checkoutWindowTitle = null)
     {
         _webView = webView;
         _environment = environment;
+        _checkoutWindowTitle = string.IsNullOrWhiteSpace(checkoutWindowTitle)
+            ? "孔夫子确认页面"
+            : checkoutWindowTitle;
 
         var coreWebView = TryGetCoreWebView()
             ?? throw new InvalidOperationException("孔夫子网页尚未初始化");
@@ -166,7 +173,7 @@ internal sealed class OfficialCheckoutNavigator : IDisposable
         CheckoutBrowserWindow? checkoutWindow = null;
         try
         {
-            checkoutWindow = new CheckoutBrowserWindow(_environment);
+            checkoutWindow = new CheckoutBrowserWindow(_environment, _checkoutWindowTitle);
             _checkoutWindow = checkoutWindow;
             checkoutWindow.OfficialCheckoutOpened += CheckoutWindow_OfficialCheckoutOpened;
             checkoutWindow.Closed += CheckoutWindow_Closed;

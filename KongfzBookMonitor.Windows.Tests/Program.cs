@@ -14,6 +14,7 @@ internal static class Program
             ReadsTheListingPriceBeforeFreightText();
             NotifiesOnlyTheLowestPriceChosenForCheckout();
             RetriesOfficialPurchaseOnceAfterManualVerification();
+            KeepsFiveRuleConfigurationsIndependent();
             Console.WriteLine("All regression checks passed.");
             return 0;
         }
@@ -130,6 +131,56 @@ internal static class Program
                 newlyMatchedItemCount: 0,
                 retryCheckoutAfterVerification: false),
             "Normal monitoring must still wait for a genuinely new matching item.");
+    }
+
+    private static void KeepsFiveRuleConfigurationsIndependent()
+    {
+        var configuredSlots = new MonitorRuleSettings
+        {
+            Rules = new[]
+            {
+                new MonitorRule
+                {
+                    Id = "rule-one",
+                    Slot = 1,
+                    Keyword = "针灸大成",
+                    Author = "杨继洲",
+                    MinPrice = 1,
+                    MaxPrice = 20,
+                    IntervalSeconds = 1,
+                    Monitoring = true,
+                },
+                new MonitorRule
+                {
+                    Id = "rule-two",
+                    Slot = 2,
+                    Keyword = "鲁迅全集",
+                    Publisher = "人民文学出版社",
+                    MinPrice = 30,
+                    MaxPrice = 80,
+                    IntervalSeconds = 15,
+                    Monitoring = false,
+                },
+            }.ToList(),
+        }.Normalize();
+
+        Assert(configuredSlots.Rules.Count == 5,
+            "The desktop monitor must always expose exactly five fixed task slots.");
+        Assert(configuredSlots.Rules.Select(rule => rule.Slot).Distinct().Count() == 5,
+            "Each fixed task slot must remain unique after configuration normalization.");
+        Assert(configuredSlots.Rules.Select(rule => rule.Id).Distinct().Count() == 5,
+            "Each task must have its own persistent identity for separate de-duplication.");
+
+        var first = configuredSlots.Rules.Single(rule => rule.Slot == 1).ToMonitorConfig();
+        var second = configuredSlots.Rules.Single(rule => rule.Slot == 2).ToMonitorConfig();
+        Assert(first.Keyword == "针灸大成" && first.Author == "杨继洲" && first.MinPrice == 1 && first.MaxPrice == 20 && first.IntervalSeconds == 1,
+            "The first task's single-keyword filter chain changed during multi-task normalization.");
+        Assert(second.Keyword == "鲁迅全集" && second.Publisher == "人民文学出版社" && second.MinPrice == 30 && second.MaxPrice == 80 && second.IntervalSeconds == 15,
+            "The second task's filter chain was mixed with another keyword's settings.");
+
+        first.Keyword = "已修改的任务一";
+        Assert(second.Keyword == "鲁迅全集",
+            "Mutating one task's monitor config must not change another task's keyword.");
     }
 
     private static void Assert(bool condition, string message)

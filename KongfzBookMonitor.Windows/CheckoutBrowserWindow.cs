@@ -17,10 +17,10 @@ internal sealed class CheckoutBrowserWindow : Window
     private bool _isClosed;
     private bool _officialCheckoutOpened;
 
-    public CheckoutBrowserWindow(CoreWebView2Environment environment)
+    public CheckoutBrowserWindow(CoreWebView2Environment environment, string? title = null)
     {
         Environment = environment;
-        Title = "孔夫子确认页面";
+        Title = string.IsNullOrWhiteSpace(title) ? "孔夫子确认页面" : title;
         Width = 1080;
         Height = 780;
         MinWidth = 640;

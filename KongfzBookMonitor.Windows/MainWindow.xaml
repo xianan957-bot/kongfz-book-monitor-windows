@@ -3,10 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="孔夫子旧书监控"
-        Width="760"
-        Height="820"
-        MinWidth="620"
-        MinHeight="620"
+        Width="980"
+        Height="850"
+        MinWidth="760"
+        MinHeight="650"
         Loaded="Window_Loaded"
         Closing="Window_Closing">
     <Grid Margin="16">
@@ -15,52 +15,167 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20">
                         <TextBlock Text="孔夫子旧书监控" FontSize="24" FontWeight="SemiBold" />
-                        <TextBlock x:Name="StatusText" Margin="0,12,0,4" FontSize="16" Text="监控状态：初始化中" />
-                        <TextBlock x:Name="RoundCountText" Margin="0,0,0,16" Text="已监控轮次：0" />
+                        <TextBlock x:Name="SummaryText"
+                                   Margin="0,10,0,12"
+                                   FontSize="15"
+                                   Text="正在初始化 5 个独立监控任务…" />
 
-                        <TextBlock Text="关键词" />
-                        <TextBox x:Name="KeywordInput" Margin="0,4,0,10" />
+                        <WrapPanel Margin="0,0,0,12">
+                            <Button Content="开始全部已设置任务"
+                                    Click="StartAllButton_Click"
+                                    Padding="14,7"
+                                    Margin="0,0,8,8" />
+                            <Button Content="停止全部任务"
+                                    Click="StopAllButton_Click"
+                                    Padding="14,7"
+                                    Margin="0,0,8,8" />
+                            <Button Content="打开孔夫子网页登录"
+                                    Click="OpenLoginButton_Click"
+                                    Padding="14,7"
+                                    Margin="0,0,8,8" />
+                        </WrapPanel>
 
-                        <TextBlock Text="作者（可选）" />
-                        <TextBox x:Name="AuthorInput" Margin="0,4,0,10" />
+                        <TextBlock Text="五个独立监控任务" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <TextBlock Text="每个任务单独搜索、筛选、去重和计轮；验证码或官方确认页只暂停对应任务。"
+                                   TextWrapping="Wrap"
+                                   Foreground="DimGray"
+                                   Margin="0,0,0,8" />
 
-                        <TextBlock Text="出版社（可选）" />
-                        <TextBox x:Name="PublisherInput" Margin="0,4,0,10" />
+                        <ListView x:Name="RuleList"
+                                  ItemsSource="{Binding Rules}"
+                                  SelectionChanged="RuleList_SelectionChanged"
+                                  BorderBrush="#D0D0D0"
+                                  Margin="0,0,0,16">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="248" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding SlotText}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding RoundCountText}" Foreground="DimGray" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding StatusText}"
+                                                       TextWrapping="Wrap"
+                                                       VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="2" Margin="8,0">
+                                                <TextBlock Text="{Binding KeywordText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding CriteriaSummary}"
+                                                           Foreground="DimGray"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="3"
+                                                       Text="{Binding IntervalText}"
+                                                       VerticalAlignment="Center"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock Grid.Column="4"
+                                                       Text="{Binding Rule.Monitoring, StringFormat=已保存运行：{0}}"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap" />
+                                            <WrapPanel Grid.Column="5" HorizontalAlignment="Right">
+                                                <Button Content="编辑"
+                                                        Tag="{Binding}"
+                                                        Click="EditRuleButton_Click"
+                                                        Padding="9,4"
+                                                        Margin="0,0,6,4" />
+                                                <Button Content="开始"
+                                                        Tag="{Binding}"
+                                                        Click="StartRuleButton_Click"
+                                                        Padding="9,4"
+                                                        Margin="0,0,6,4" />
+                                                <Button Content="停止"
+                                                        Tag="{Binding}"
+                                                        Click="StopRuleButton_Click"
+                                                        Padding="9,4"
+                                                        Margin="0,0,6,4" />
+                                                <Button Content="打开网页"
+                                                        Tag="{Binding}"
+                                                        Click="OpenRuleBrowserButton_Click"
+                                                        Padding="9,4"
+                                                        Margin="0,0,0,4" />
+                                            </WrapPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
 
-                        <TextBlock Text="最低商品价格（可选）" />
-                        <TextBox x:Name="MinPriceInput" Margin="0,4,0,10" />
-
-                        <TextBlock Text="最高商品价格（可选）" />
-                        <TextBox x:Name="MaxPriceInput" Margin="0,4,0,10" />
-
-                        <TextBlock Text="刷新间隔（1～15 秒）" />
-                        <TextBox x:Name="IntervalInput" Margin="0,4,0,18" />
-
-                        <Button Content="打开孔夫子网页登录"
-                                Click="OpenLoginButton_Click"
-                                Padding="14,7"
-                                Margin="0,0,0,8" />
-                        <Button x:Name="StartButton"
-                                Content="开始监控"
-                                Click="StartButton_Click"
-                                Padding="14,7"
-                                Margin="0,0,0,8" />
-                        <Button x:Name="StopButton"
-                                Content="停止监控"
-                                Click="StopButton_Click"
-                                Padding="14,7" />
+                        <Border BorderBrush="#B8B8B8" BorderThickness="1" Padding="14" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock x:Name="SelectedRuleText" Text="编辑任务" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="保存只影响当前任务；修改正在运行的任务时，该任务会先停止，再按新条件重新开始。"
+                                           Margin="0,5,0,12"
+                                           Foreground="DimGray"
+                                           TextWrapping="Wrap" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                        <TextBlock Text="关键词" />
+                                        <TextBox x:Name="KeywordInput" Margin="0,4,0,10" />
+                                        <TextBlock Text="作者（可选）" />
+                                        <TextBox x:Name="AuthorInput" Margin="0,4,0,10" />
+                                        <TextBlock Text="出版社（可选）" />
+                                        <TextBox x:Name="PublisherInput" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                        <TextBlock Text="最低商品价格（可选）" />
+                                        <TextBox x:Name="MinPriceInput" Margin="0,4,0,10" />
+                                        <TextBlock Text="最高商品价格（可选）" />
+                                        <TextBox x:Name="MaxPriceInput" Margin="0,4,0,10" />
+                                        <TextBlock Text="刷新间隔（1～15 秒）" />
+                                        <TextBox x:Name="IntervalInput" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel Margin="0,16,0,0">
+                                    <Button Content="保存当前任务"
+                                            Click="SaveSelectedRuleButton_Click"
+                                            Padding="14,7"
+                                            Margin="0,0,8,8" />
+                                    <Button Content="开始当前任务"
+                                            Click="StartSelectedRuleButton_Click"
+                                            Padding="14,7"
+                                            Margin="0,0,8,8" />
+                                    <Button Content="停止当前任务"
+                                            Click="StopSelectedRuleButton_Click"
+                                            Padding="14,7"
+                                            Margin="0,0,8,8" />
+                                    <Button Content="打开当前任务网页"
+                                            Click="OpenSelectedRuleBrowserButton_Click"
+                                            Padding="14,7"
+                                            Margin="0,0,8,8" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem x:Name="LoginTab" Header="孔夫子网页登录">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Margin="16,12,16,8"
-                               TextWrapping="Wrap"
-                               Text="请在此页手动完成孔夫子登录。登录资料只保存在当前 Windows 用户的本地 WebView2 配置目录中。" />
-                    <wv2:WebView2 x:Name="MonitorWebView" />
-                </DockPanel>
+            <TabItem x:Name="BrowserPageTab" Header="孔夫子网页登录 / 验证">
+                <TabControl x:Name="BrowserTabs">
+                    <TabItem x:Name="LoginBrowserTab" Header="网页登录">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top"
+                                       Margin="16,12,16,8"
+                                       TextWrapping="Wrap"
+                                       Text="请在此页手动完成孔夫子登录。登录资料只保存在当前 Windows 用户的本地 WebView2 配置目录中；五个任务共用该登录状态。" />
+                            <wv2:WebView2 x:Name="LoginWebView" />
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
             </TabItem>
         </TabControl>
     </Grid>
