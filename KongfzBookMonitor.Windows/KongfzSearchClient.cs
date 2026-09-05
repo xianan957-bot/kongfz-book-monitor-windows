@@ -214,30 +214,49 @@ public sealed class KongfzSearchClient
     {
         try
         {
-            var decoded = JsonSerializer.Deserialize<string>(scriptResponse);
-            if (string.IsNullOrWhiteSpace(decoded)) return null;
-
-            using var document = JsonDocument.Parse(decoded);
-            var root = document.RootElement;
-            var items = new List<KongfzItem>();
-            if (root.TryGetProperty("items", out var itemArray) && itemArray.ValueKind == JsonValueKind.Array)
+            // ExecuteScriptAsync normally returns the JSON representation of
+            // an object. It only returns a JSON string when the script itself
+            // returned JSON.stringify(...). Accept both shapes so a rendered
+            // result page cannot be mistaken for a collection timeout.
+            using var responseDocument = JsonDocument.Parse(scriptResponse);
+            var responseRoot = responseDocument.RootElement;
+            if (responseRoot.ValueKind == JsonValueKind.Object)
             {
-                foreach (var element in itemArray.EnumerateArray())
-                {
-                    var item = ParseItem(element);
-                    if (item is not null) items.Add(item);
-                }
+                return ParseSearchResult(responseRoot);
             }
 
-            return new SearchResult(
-                GetString(root, "state"),
-                GetString(root, "message"),
-                items);
+            if (responseRoot.ValueKind != JsonValueKind.String) return null;
+
+            var decoded = responseRoot.GetString();
+            if (string.IsNullOrWhiteSpace(decoded)) return null;
+
+            using var decodedDocument = JsonDocument.Parse(decoded);
+            return decodedDocument.RootElement.ValueKind == JsonValueKind.Object
+                ? ParseSearchResult(decodedDocument.RootElement)
+                : null;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static SearchResult ParseSearchResult(JsonElement root)
+    {
+        var items = new List<KongfzItem>();
+        if (root.TryGetProperty("items", out var itemArray) && itemArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in itemArray.EnumerateArray())
+            {
+                var item = ParseItem(element);
+                if (item is not null) items.Add(item);
+            }
+        }
+
+        return new SearchResult(
+            GetString(root, "state"),
+            GetString(root, "message"),
+            items);
     }
 
     private static KongfzItem? ParseItem(JsonElement element)

@@ -134,18 +134,23 @@ public partial class MainWindow : Window
         _notificationService?.ShowNewItem(item);
     }
 
-    private void HandleLowestPricedMatchedItem(KongfzItem item)
+    private void HandleLowestPricedMatchedItem(KongfzItem item, string searchUrl)
     {
-        OpenItemWindow(item.ItemUrl, autoCheckout: true);
+        OpenItemWindow(item.ItemUrl, searchUrl, autoCheckout: true);
     }
 
     private void OpenItemWindow(string itemUrl, bool autoCheckout)
+    {
+        OpenItemWindow(itemUrl, searchUrl: null, autoCheckout);
+    }
+
+    private void OpenItemWindow(string itemUrl, string? searchUrl, bool autoCheckout)
     {
         if (_webViewEnvironment is null) return;
 
         try
         {
-            new ItemBrowserWindow(_webViewEnvironment, itemUrl, autoCheckout).Show();
+            new ItemBrowserWindow(_webViewEnvironment, itemUrl, searchUrl, autoCheckout).Show();
         }
         catch (ArgumentException)
         {

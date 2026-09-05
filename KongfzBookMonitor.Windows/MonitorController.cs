@@ -29,7 +29,7 @@ public sealed class MonitorController : IDisposable
 
     public event Action<string>? StatusChanged;
     public event Action<KongfzItem>? MatchedItem;
-    public event Action<KongfzItem>? LowestPricedMatchedItem;
+    public event Action<KongfzItem, string>? LowestPricedMatchedItem;
 
     public void Start(MonitorConfig config)
     {
@@ -98,9 +98,10 @@ public sealed class MonitorController : IDisposable
                 {
                     StatusChanged?.Invoke("监控状态：孔夫子搜索要求验证或已达到访问上限");
                 }
-                catch (Exception)
+                catch (Exception error)
                 {
-                    StatusChanged?.Invoke("监控状态：本轮搜索失败，等待下一轮");
+                    StatusChanged?.Invoke(
+                        $"监控状态：本轮搜索失败（{DescribeFailure(error)}），等待下一轮");
                 }
 
                 try
@@ -156,8 +157,24 @@ public sealed class MonitorController : IDisposable
             .FirstOrDefault();
         if (lowestPricedItem is not null)
         {
-            LowestPricedMatchedItem?.Invoke(lowestPricedItem);
+            LowestPricedMatchedItem?.Invoke(
+                lowestPricedItem,
+                KongfzSearchClient.BuildSearchUrl(config));
         }
+    }
+
+    private static string DescribeFailure(Exception error)
+    {
+        return error switch
+        {
+            TimeoutException => "搜索结果加载超时",
+            InvalidOperationException => string.IsNullOrWhiteSpace(error.Message)
+                ? "搜索页面异常"
+                : error.Message,
+            System.IO.IOException => "本地已处理商品记录无法保存",
+            UnauthorizedAccessException => "本地数据目录没有写入权限",
+            _ => error.GetType().Name,
+        };
     }
 }
 }
