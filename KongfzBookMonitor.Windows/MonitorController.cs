@@ -209,7 +209,8 @@ public sealed class MonitorController : IDisposable
             {
                 if (!ItemFilter.Matches(item, config)) continue;
 
-                // “最低价” is selected from every matching item currently
+                // “最低价” means the item's displayed listing price, excluding
+                // freight. It is selected from every matching item currently
                 // rendered on page one, not from visual order in the list.
                 currentMatchedItems.Add(item);
                 if (isNew) newlyMatchedItems.Add(item);

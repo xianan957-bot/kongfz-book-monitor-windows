@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 5.0.x
+      - name: Run regression checks
+        run: dotnet run .\KongfzBookMonitor.Windows.Tests\KongfzBookMonitor.Windows.Tests.csproj --configuration Release
       - name: Build
         run: dotnet build .\KongfzBookMonitor.Windows\KongfzBookMonitor.Windows.csproj --configuration Release
       - name: Upload Windows build

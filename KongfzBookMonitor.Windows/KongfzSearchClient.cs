@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
@@ -21,6 +22,9 @@ public sealed class KongfzSearchClient
     private const int FirstCollectionDelayMilliseconds = 1000;
     private const int CollectionRetryDelayMilliseconds = 500;
     private const int MaxCollectionAttempts = 16;
+    private static readonly Regex CurrencyAmountPattern = new(
+        @"[￥¥]\s*(?<amount>\d+(?:\.\d+)?)",
+        RegexOptions.CultureInvariant);
 
     // Verified against the official search-v3 page: item cards render title,
     // price and bibliographic metadata in these DOM nodes.
@@ -96,6 +100,7 @@ public sealed class KongfzSearchClient
         })()";
 
     private readonly WebView2 _webView;
+    private string? _activeSearchUrl;
 
     public KongfzSearchClient(WebView2 webView)
     {
@@ -108,7 +113,19 @@ public sealed class KongfzSearchClient
         if (string.IsNullOrWhiteSpace(normalized.Keyword)) return Array.Empty<KongfzItem>();
         if (_webView.CoreWebView2 is null) throw new InvalidOperationException("孔夫子搜索 WebView2 尚未初始化");
 
-        await NavigateAsync(BuildSearchUrl(normalized), cancellationToken);
+        var searchUrl = BuildSearchUrl(normalized);
+        if (CanRefreshCurrentSearchResult(searchUrl))
+        {
+            // Keep the same official advanced-search result page open between
+            // rounds. Reloading it preserves its page state and avoids
+            // re-entering the search flow for unchanged monitoring settings.
+            await ReloadCurrentPageAsync(cancellationToken);
+        }
+        else
+        {
+            await NavigateAsync(searchUrl, cancellationToken);
+            _activeSearchUrl = searchUrl;
+        }
 
         for (var attempt = 0; attempt <= MaxCollectionAttempts; attempt += 1)
         {
@@ -200,8 +217,9 @@ public sealed class KongfzSearchClient
         }
 
         // The current official advanced-search form converts its start/end
-        // price inputs to product/?price=<minimum>~<maximum>. Use that result
-        // URL directly instead of loading and submitting adv.html every round.
+        // product-price inputs to product/?price=<minimum>~<maximum>. These
+        // are listing prices only; freight is not part of this monitor's
+        // configured price range.
         if (normalized.MinPrice is not null || normalized.MaxPrice is not null)
         {
             var minPrice = normalized.MinPrice?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
@@ -223,6 +241,20 @@ public sealed class KongfzSearchClient
 
     private async Task NavigateAsync(string url, CancellationToken cancellationToken)
     {
+        await NavigateAndWaitAsync(
+            () => _webView.CoreWebView2!.Navigate(url),
+            cancellationToken);
+    }
+
+    private async Task ReloadCurrentPageAsync(CancellationToken cancellationToken)
+    {
+        await NavigateAndWaitAsync(
+            () => _webView.CoreWebView2!.Reload(),
+            cancellationToken);
+    }
+
+    private async Task NavigateAndWaitAsync(Action navigation, CancellationToken cancellationToken)
+    {
         var completion = new TaskCompletionSource<CoreWebView2NavigationCompletedEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -234,7 +266,7 @@ public sealed class KongfzSearchClient
         {
             using var registration = cancellationToken.Register(
                 () => completion.TrySetCanceled(cancellationToken));
-            _webView.CoreWebView2!.Navigate(url);
+            navigation();
             var result = await completion.Task;
             if (!result.IsSuccess)
             {
@@ -245,6 +277,53 @@ public sealed class KongfzSearchClient
         {
             _webView.NavigationCompleted -= onNavigationCompleted;
         }
+    }
+
+    private bool CanRefreshCurrentSearchResult(string expectedSearchUrl)
+    {
+        if (!string.Equals(_activeSearchUrl, expectedSearchUrl, StringComparison.Ordinal)) return false;
+        if (_webView.CoreWebView2 is null) return false;
+        if (!Uri.TryCreate(_webView.CoreWebView2.Source, UriKind.Absolute, out var currentUri) ||
+            !Uri.TryCreate(expectedSearchUrl, UriKind.Absolute, out var expectedUri))
+        {
+            return false;
+        }
+
+        return IsSearchResultUrl(currentUri) && HasSameSearchCriteria(currentUri, expectedUri);
+    }
+
+    private static bool IsSearchResultUrl(Uri uri)
+    {
+        return string.Equals(uri.Host, "search.kongfz.com", StringComparison.OrdinalIgnoreCase) &&
+            uri.AbsolutePath.StartsWith("/product", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSameSearchCriteria(Uri currentUri, Uri expectedUri)
+    {
+        var current = ParseQuery(currentUri);
+        var expected = ParseQuery(expectedUri);
+        foreach (var key in new[] { "keyword", "dataType", "sortType", "author", "press", "price", "page", "userArea" })
+        {
+            current.TryGetValue(key, out var currentValue);
+            expected.TryGetValue(key, out var expectedValue);
+            if (!string.Equals(currentValue, expectedValue, StringComparison.Ordinal)) return false;
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, string> ParseQuery(Uri uri)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = entry.IndexOf('=');
+            var rawKey = separator >= 0 ? entry[..separator] : entry;
+            var rawValue = separator >= 0 ? entry[(separator + 1)..] : string.Empty;
+            result[Uri.UnescapeDataString(rawKey)] = Uri.UnescapeDataString(rawValue);
+        }
+
+        return result;
     }
 
     private static SearchResult? ParseScriptResult(string scriptResponse)
@@ -301,7 +380,7 @@ public sealed class KongfzSearchClient
         var itemId = GetString(element, "itemId");
         var itemUrl = GetString(element, "itemUrl");
         var title = GetString(element, "title");
-        var price = ParsePrice(GetString(element, "priceText"));
+        var price = ParseListingPrice(GetString(element, "priceText"));
         if (string.IsNullOrWhiteSpace(itemId) ||
             string.IsNullOrWhiteSpace(title) ||
             price is null ||
@@ -328,8 +407,21 @@ public sealed class KongfzSearchClient
             : string.Empty;
     }
 
-    private static double? ParsePrice(string rawPrice)
+    internal static double? ParseListingPrice(string rawPrice)
     {
+        // A result card can render freight next to the listing price. The
+        // first currency amount is the item's own price; it is the only value
+        // used for the configured price range and lowest-price choice.
+        var currencyMatch = CurrencyAmountPattern.Match(rawPrice);
+        if (currencyMatch.Success && double.TryParse(
+                currencyMatch.Groups["amount"].Value,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var currencyAmount))
+        {
+            return currencyAmount;
+        }
+
         var normalized = rawPrice
             .Replace("￥", string.Empty)
             .Replace("¥", string.Empty)

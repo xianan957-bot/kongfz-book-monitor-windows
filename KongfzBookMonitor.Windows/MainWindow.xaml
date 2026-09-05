@@ -27,10 +27,10 @@
                         <TextBlock Text="出版社（可选）" />
                         <TextBox x:Name="PublisherInput" Margin="0,4,0,10" />
 
-                        <TextBlock Text="最低价格（可选）" />
+                        <TextBlock Text="最低商品价格（不含运费，可选）" />
                         <TextBox x:Name="MinPriceInput" Margin="0,4,0,10" />
 
-                        <TextBlock Text="最高价格（可选）" />
+                        <TextBlock Text="最高商品价格（不含运费，可选）" />
                         <TextBox x:Name="MaxPriceInput" Margin="0,4,0,10" />
 
                         <TextBlock Text="刷新间隔（1～15 秒）" />

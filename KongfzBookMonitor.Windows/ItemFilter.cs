@@ -19,13 +19,21 @@ public static class ItemFilter
         }
 
         var expectedAuthor = config.Author.Trim();
-        if (!string.IsNullOrEmpty(expectedAuthor) && !ContainsText(item.Author, expectedAuthor))
+        // Author and publisher are already submitted to Kongfz's official
+        // advanced-search URL. Some result cards omit their optional metadata
+        // nodes, so a missing value cannot disprove that server-side filter.
+        // A value that is present must still agree with the configured filter.
+        if (!string.IsNullOrEmpty(expectedAuthor) &&
+            !string.IsNullOrWhiteSpace(item.Author) &&
+            !ContainsText(item.Author, expectedAuthor))
         {
             return false;
         }
 
         var expectedPublisher = config.Publisher.Trim();
-        if (!string.IsNullOrEmpty(expectedPublisher) && !ContainsText(item.Publisher, expectedPublisher))
+        if (!string.IsNullOrEmpty(expectedPublisher) &&
+            !string.IsNullOrWhiteSpace(item.Publisher) &&
+            !ContainsText(item.Publisher, expectedPublisher))
         {
             return false;
         }
