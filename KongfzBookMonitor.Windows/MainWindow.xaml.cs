@@ -18,6 +18,7 @@ namespace KongfzBookMonitor.Windows
 
 public partial class MainWindow : Window
 {
+    private const string KongfzHomePageUrl = "https://www.kongfz.com/";
     private readonly Dictionary<string, MonitorRuleSession> _sessions = new(StringComparer.Ordinal);
     private MonitorRulesStore? _rulesStore;
     private CoreWebView2Environment? _webViewEnvironment;
@@ -67,6 +68,7 @@ public partial class MainWindow : Window
 
             _webViewEnvironment = await WebViewEnvironmentFactory.CreateAsync();
             await LoginWebView.EnsureCoreWebView2Async(_webViewEnvironment);
+            NavigateLoginHomePage();
 
             _notificationService = new WindowsNotificationService();
             _notificationService.ItemClicked += itemUrl => Dispatcher.BeginInvoke(
@@ -168,7 +170,13 @@ public partial class MainWindow : Window
 
         BrowserPageTab.IsSelected = true;
         BrowserTabs.SelectedItem = LoginBrowserTab;
-        LoginWebView.CoreWebView2.Navigate("https://www.kongfz.com/");
+        NavigateLoginHomePage();
+    }
+
+    private void NavigateLoginHomePage()
+    {
+        if (LoginWebView.CoreWebView2 is null) return;
+        LoginWebView.CoreWebView2.Navigate(KongfzHomePageUrl);
     }
 
     private void RuleList_SelectionChanged(object sender, SelectionChangedEventArgs e)
