@@ -22,8 +22,11 @@ public partial class MainWindow : Window
     private MonitorRulesStore? _rulesStore;
     private CoreWebView2Environment? _webViewEnvironment;
     private WindowsNotificationService? _notificationService;
+    private Timer? _expirationTimer;
     private bool _isInitialized;
     private bool _isClosing;
+    private bool _isExpired;
+    private bool _expirationNoticeShown;
 
     public MainWindow()
     {
@@ -38,6 +41,13 @@ public partial class MainWindow : Window
         if (_isInitialized) return;
         _isInitialized = true;
 
+        if (UsageExpirationPolicy.HasExpired(DateTime.Now))
+        {
+            await ExpireApplicationAsync();
+            return;
+        }
+
+        ArmExpirationTimer();
         _rulesStore = new MonitorRulesStore();
         var settings = _rulesStore.Load();
         Rules.Clear();
@@ -71,6 +81,8 @@ public partial class MainWindow : Window
             MainTabs.SelectedIndex = 0;
             UpdateSummary();
 
+            if (!EnsureUsageAvailable()) return;
+
             // Preserve the former single-task behavior: a task that was
             // intentionally left running is resumed on next launch. Each one
             // resumes independently and cannot change another task's state.
@@ -85,6 +97,7 @@ public partial class MainWindow : Window
         }
         catch (Exception error)
         {
+            if (_isExpired || _isClosing) return;
             SummaryText.Text = "监控状态：WebView2 初始化失败";
             MessageBox.Show(
                 this,
@@ -97,7 +110,7 @@ public partial class MainWindow : Window
 
     private async Task CreateSessionAsync(MonitorRuleViewModel ruleViewModel)
     {
-        if (_rulesStore is null || _webViewEnvironment is null) return;
+        if (_rulesStore is null || _webViewEnvironment is null || !EnsureUsageAvailable()) return;
 
         var webView = new WebView2();
         var browserTab = new TabItem
@@ -146,6 +159,7 @@ public partial class MainWindow : Window
 
     private void OpenLoginButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (LoginWebView.CoreWebView2 is null)
         {
             MessageBox.Show(this, "WebView2 正在初始化，请稍后再试。", "孔夫子商品监控");
@@ -171,6 +185,7 @@ public partial class MainWindow : Window
 
     private void StartRuleButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSessionFromButton(sender) is not { } session) return;
         SelectRule(session.ViewModel);
         StartSession(session, session.ConfigStore.Load(), showMessageForEmptyKeyword: true);
@@ -178,6 +193,7 @@ public partial class MainWindow : Window
 
     private async void StopRuleButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSessionFromButton(sender) is not { } session) return;
         SelectRule(session.ViewModel);
         await StopSessionAsync(session);
@@ -185,6 +201,7 @@ public partial class MainWindow : Window
 
     private void OpenRuleBrowserButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSessionFromButton(sender) is not { } session) return;
         SelectRule(session.ViewModel);
         OpenTaskBrowser(session);
@@ -192,6 +209,7 @@ public partial class MainWindow : Window
 
     private async void SaveSelectedRuleButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSelectedSession() is not { } session) return;
         if (!TryReadConfig(out var config)) return;
 
@@ -207,6 +225,7 @@ public partial class MainWindow : Window
 
     private async void StartSelectedRuleButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSelectedSession() is not { } session) return;
         if (!TryReadConfig(out var config)) return;
 
@@ -224,18 +243,21 @@ public partial class MainWindow : Window
 
     private async void StopSelectedRuleButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSelectedSession() is not { } session) return;
         await StopSessionAsync(session);
     }
 
     private void OpenSelectedRuleBrowserButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         if (GetSelectedSession() is not { } session) return;
         OpenTaskBrowser(session);
     }
 
     private void StartAllButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         var startedCount = 0;
         foreach (var session in _sessions.Values.OrderBy(item => item.ViewModel.Slot))
         {
@@ -253,6 +275,7 @@ public partial class MainWindow : Window
 
     private async void StopAllButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureUsageAvailable()) return;
         var sessions = _sessions.Values.ToArray();
         foreach (var session in sessions)
         {
@@ -272,6 +295,7 @@ public partial class MainWindow : Window
         MonitorConfig config,
         bool showMessageForEmptyKeyword)
     {
+        if (!EnsureUsageAvailable()) return false;
         if (session.Controller.IsRunning) return false;
         if (string.IsNullOrWhiteSpace(config.Keyword))
         {
@@ -293,6 +317,7 @@ public partial class MainWindow : Window
 
     private async Task StopSessionAsync(MonitorRuleSession session)
     {
+        if (_isExpired) return;
         _notificationService?.CancelRuleNotifications(session.RuleId);
         session.ViewModel.UpdateStatus("正在停止");
         UpdateSummary();
@@ -334,6 +359,8 @@ public partial class MainWindow : Window
             return await operation.Task.Unwrap();
         }
 
+        if (!EnsureUsageAvailable()) return false;
+
         // Reuse only this task's existing official result page. This keeps
         // the candidate selection, “立即购买” click and confirmation popup
         // tied to the same task and avoids cross-keyword navigation.
@@ -353,6 +380,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!EnsureUsageAvailable()) return;
+
         OpenTaskBrowser(session);
         while (true)
         {
@@ -370,7 +399,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (!_isClosing)
+            if (!_isClosing && !_isExpired)
             {
                 _notificationService?.ShowNewItem(session.RuleId, session.ViewModel.SlotText, item);
             }
@@ -381,7 +410,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (_isClosing) return;
+            if (_isClosing || _isExpired) return;
 
             session.ViewModel.UpdateStatus(status);
             var verificationWaiting = status.StartsWith(
@@ -406,7 +435,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (_isClosing) return;
+            if (_isClosing || _isExpired) return;
             session.ViewModel.UpdateRoundCount(roundCount);
             UpdateSummary();
         }));
@@ -481,6 +510,12 @@ public partial class MainWindow : Window
 
     private void UpdateSummary()
     {
+        if (_isExpired)
+        {
+            SummaryText.Text = "使用期限已到期，请联系管理员";
+            return;
+        }
+
         var running = _sessions.Values.Count(session => session.Controller.IsRunning);
         var waitingForVerification = Rules.Count(rule => rule.StatusText.StartsWith("检测到孔夫子人机验证", StringComparison.Ordinal));
         var pausedForConfirmation = Rules.Count(rule => rule.StatusText.StartsWith("已进入官方下单确认页", StringComparison.Ordinal));
@@ -553,9 +588,81 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool EnsureUsageAvailable()
+    {
+        if (!_isExpired && !UsageExpirationPolicy.HasExpired(DateTime.Now)) return true;
+
+        _ = ExpireApplicationAsync();
+        return false;
+    }
+
+    private void ArmExpirationTimer()
+    {
+        var delay = UsageExpirationPolicy.GetTimeUntilExpiration(DateTime.Now);
+        _expirationTimer?.Dispose();
+        _expirationTimer = new Timer(
+            _ =>
+            {
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() => _ = ExpireApplicationAsync()));
+                }
+                catch (InvalidOperationException)
+                {
+                    // The dispatcher can already be shutting down.
+                }
+            },
+            state: null,
+            dueTime: delay,
+            period: Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task ExpireApplicationAsync()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            var operation = Dispatcher.InvokeAsync(ExpireApplicationAsync);
+            await operation.Task.Unwrap();
+            return;
+        }
+
+        if (_isExpired || _isClosing) return;
+
+        _isExpired = true;
+        _expirationTimer?.Dispose();
+        _expirationTimer = null;
+        MainTabs.IsEnabled = false;
+        UpdateSummary();
+
+        var sessions = _sessions.Values.ToArray();
+        foreach (var session in sessions)
+        {
+            session.Controller.Stop();
+            _notificationService?.CancelRuleNotifications(session.RuleId);
+        }
+
+        var stopTasks = Task.WhenAll(sessions.Select(session => session.Controller.StopAsync()));
+        await Task.WhenAny(stopTasks, Task.Delay(TimeSpan.FromSeconds(2)));
+
+        if (!_expirationNoticeShown)
+        {
+            _expirationNoticeShown = true;
+            MessageBox.Show(
+                this,
+                "使用期限已到期，请联系管理员",
+                "孔夫子商品监控",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        Application.Current?.Shutdown();
+    }
+
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
         _isClosing = true;
+        _expirationTimer?.Dispose();
+        _expirationTimer = null;
         foreach (var session in _sessions.Values)
         {
             session.Dispose();

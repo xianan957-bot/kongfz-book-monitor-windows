@@ -15,6 +15,7 @@ internal static class Program
             NotifiesOnlyTheLowestPriceChosenForCheckout();
             RetriesOfficialPurchaseOnceAfterManualVerification();
             KeepsFiveRuleConfigurationsIndependent();
+            ExpiresAtTheConfiguredLocalDeadline();
             Console.WriteLine("All regression checks passed.");
             return 0;
         }
@@ -181,6 +182,21 @@ internal static class Program
         first.Keyword = "已修改的任务一";
         Assert(second.Keyword == "鲁迅全集",
             "Mutating one task's monitor config must not change another task's keyword.");
+    }
+
+    private static void ExpiresAtTheConfiguredLocalDeadline()
+    {
+        var deadline = UsageExpirationPolicy.ExpirationLocalTime;
+        Assert(deadline == new DateTime(2026, 9, 30, 23, 59, 59, DateTimeKind.Local),
+            "The requested local usage deadline changed unexpectedly.");
+        Assert(!UsageExpirationPolicy.HasExpired(deadline.AddTicks(-1)),
+            "The app must remain usable immediately before the deadline.");
+        Assert(UsageExpirationPolicy.HasExpired(deadline),
+            "The app must stop at the exact configured deadline.");
+        Assert(UsageExpirationPolicy.HasExpired(deadline.AddSeconds(1)),
+            "The app must remain unavailable after the deadline.");
+        Assert(UsageExpirationPolicy.GetTimeUntilExpiration(deadline.AddTicks(-1)) == TimeSpan.FromTicks(1),
+            "The expiration timer did not calculate the final pre-deadline interval correctly.");
     }
 
     private static void Assert(bool condition, string message)
