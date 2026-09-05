@@ -1,0 +1,67 @@
+<Window x:Class="KongfzBookMonitor.Windows.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="孔夫子旧书监控"
+        Width="760"
+        Height="820"
+        MinWidth="620"
+        MinHeight="620"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+    <Grid Margin="16">
+        <TabControl x:Name="MainTabs">
+            <TabItem Header="监控主页">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20">
+                        <TextBlock Text="孔夫子旧书监控" FontSize="24" FontWeight="SemiBold" />
+                        <TextBlock x:Name="StatusText" Margin="0,12,0,16" FontSize="16" Text="监控状态：初始化中" />
+
+                        <TextBlock Text="关键词" />
+                        <TextBox x:Name="KeywordInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="作者（可选）" />
+                        <TextBox x:Name="AuthorInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="出版社（可选）" />
+                        <TextBox x:Name="PublisherInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="最高价格（可选）" />
+                        <TextBox x:Name="MaxPriceInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="品相（可选）" />
+                        <TextBox x:Name="ConditionInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="指定店铺（可选）" />
+                        <TextBox x:Name="ShopInput" Margin="0,4,0,10" />
+
+                        <TextBlock Text="刷新间隔（5～15 秒）" />
+                        <TextBox x:Name="IntervalInput" Margin="0,4,0,18" />
+
+                        <Button Content="打开孔夫子网页登录"
+                                Click="OpenLoginButton_Click"
+                                Padding="14,7"
+                                Margin="0,0,0,8" />
+                        <Button Content="开始监控"
+                                Click="StartButton_Click"
+                                Padding="14,7"
+                                Margin="0,0,0,8" />
+                        <Button Content="停止监控"
+                                Click="StopButton_Click"
+                                Padding="14,7" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="LoginTab" Header="孔夫子网页登录">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Margin="16,12,16,8"
+                               TextWrapping="Wrap"
+                               Text="请在此页手动完成孔夫子登录。登录资料只保存在当前 Windows 用户的本地 WebView2 配置目录中。" />
+                    <wv2:WebView2 x:Name="MonitorWebView" />
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

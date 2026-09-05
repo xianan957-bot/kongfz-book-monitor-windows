@@ -1,0 +1,18 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 5.0.x
+      - name: Build
+        run: dotnet build .\KongfzBookMonitor.Windows\KongfzBookMonitor.Windows.csproj --configuration Release
