@@ -15,7 +15,8 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20">
                         <TextBlock Text="孔夫子旧书监控" FontSize="24" FontWeight="SemiBold" />
-                        <TextBlock x:Name="StatusText" Margin="0,12,0,16" FontSize="16" Text="监控状态：初始化中" />
+                        <TextBlock x:Name="StatusText" Margin="0,12,0,4" FontSize="16" Text="监控状态：初始化中" />
+                        <TextBlock x:Name="RoundCountText" Margin="0,0,0,16" Text="已监控轮次：0" />
 
                         <TextBlock Text="关键词" />
                         <TextBox x:Name="KeywordInput" Margin="0,4,0,10" />

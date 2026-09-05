@@ -58,8 +58,10 @@ public sealed class KongfzSearchClient
 
           var abnormal = document.querySelector('.abnormal-view');
           var abnormalText = text(abnormal);
+          var pageText = text(document.body);
           var verificationRequired = !!document.querySelector('#captcha-button, #captcha-element') ||
-            /自动请求|验证后|搜索次数已达到上限|访问频率/.test(abnormalText);
+            /查询类似计算机软件的自动请求|请您进行验证后再继续搜索|滑动滑块完成拼图|自动请求|验证后/.test(pageText);
+          var accessLimitReached = /搜索次数已达到上限|访问频率/.test(pageText);
           var loginPage = /(^|\/)login(?:\/|\?|$)/i.test(location.pathname) ||
             /请登录后|登录后再/.test(abnormalText);
           var loading = !!document.querySelector('.produc-list-skeleton, .produc-list-text-skeleton, .product-item-skeleton');
@@ -82,8 +84,10 @@ public sealed class KongfzSearchClient
           });
 
           var state = items.length > 0 ? 'ready' :
-            (verificationRequired ? 'verification' :
-              (loginPage ? 'login' : (loading ? 'loading' : 'empty')));
+            verificationRequired ? 'verification' :
+            accessLimitReached ? 'limited' :
+            loginPage ? 'login' :
+            loading ? 'loading' : 'empty';
           return {
             state: state,
             message: abnormalText,
@@ -128,6 +132,9 @@ public sealed class KongfzSearchClient
                 case "verification":
                     throw new KongfzVerificationRequiredException(
                         string.IsNullOrWhiteSpace(result.Message) ? "孔夫子官方搜索要求完成验证" : result.Message);
+                case "limited":
+                    throw new KongfzAccessLimitedException(
+                        string.IsNullOrWhiteSpace(result.Message) ? "孔夫子官方搜索已达到访问上限" : result.Message);
                 case "loading":
                     continue;
                 default:
@@ -137,6 +144,36 @@ public sealed class KongfzSearchClient
         }
 
         throw new TimeoutException("孔夫子官方搜索结果加载超时");
+    }
+
+    /// <summary>
+    /// Inspects the already displayed official page without navigating or
+    /// issuing another search request. A null result means the page cannot be
+    /// inspected yet, so a manual-verification wait should keep waiting.
+    /// </summary>
+    public async Task<bool?> IsCurrentPageVerificationRequiredAsync()
+    {
+        try
+        {
+            if (_webView.CoreWebView2 is null) return null;
+
+            const string script = @"
+                (function() {
+                  var text = ((document.body && document.body.innerText) || '').replace(/\s+/g, ' ');
+                  return !!document.querySelector('#captcha-button, #captcha-element') ||
+                    /查询类似计算机软件的自动请求|请您进行验证后再继续搜索|滑动滑块完成拼图|自动请求|验证后/.test(text);
+                })();";
+            var response = await _webView.ExecuteScriptAsync(script);
+            return string.Equals(response, "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     internal static string BuildSearchUrl(MonitorConfig config)
@@ -323,6 +360,13 @@ public sealed class KongfzLoginRequiredException : Exception
 public sealed class KongfzVerificationRequiredException : Exception
 {
     public KongfzVerificationRequiredException(string message) : base(message)
+    {
+    }
+}
+
+public sealed class KongfzAccessLimitedException : Exception
+{
+    public KongfzAccessLimitedException(string message) : base(message)
     {
     }
 }

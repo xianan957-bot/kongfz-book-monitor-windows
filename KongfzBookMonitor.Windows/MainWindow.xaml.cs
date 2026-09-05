@@ -1,6 +1,9 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.Media;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -16,6 +19,8 @@ public partial class MainWindow : Window
     private KongfzSearchClient? _searchClient;
     private MonitorController? _monitorController;
     private WindowsNotificationService? _notificationService;
+    private OfficialCheckoutNavigator? _checkoutNavigator;
+    private bool _verificationAlertActive;
 
     public MainWindow()
     {
@@ -39,27 +44,30 @@ public partial class MainWindow : Window
             await MonitorWebView.EnsureCoreWebView2Async(_webViewEnvironment);
 
             _searchClient = new KongfzSearchClient(MonitorWebView);
+            _checkoutNavigator = new OfficialCheckoutNavigator(MonitorWebView, _webViewEnvironment);
             _notificationService = new WindowsNotificationService();
             _notificationService.ItemClicked += url => Dispatcher.BeginInvoke(
-                new Action(() => OpenItemWindow(url, autoCheckout: false)));
+                new Action(() => OpenItemWindow(url)));
 
             _monitorController = new MonitorController(
                 _configStore,
                 _processedItemStore,
                 _searchClient);
-            _monitorController.StatusChanged += status => Dispatcher.BeginInvoke(
-                new Action(() => StatusText.Text = status));
+            _monitorController.StatusChanged += HandleMonitorStatusChanged;
+            _monitorController.RoundCountChanged += count => Dispatcher.BeginInvoke(
+                new Action(() => RoundCountText.Text = $"已监控轮次：{count}"));
             _monitorController.MatchedItem += HandleMatchedItem;
-            _monitorController.LowestPricedMatchedItem += HandleLowestPricedMatchedItem;
+            _monitorController.CheckoutRequested += HandleCheckoutRequestedAsync;
+            _monitorController.VerificationWaitRequested += WaitForManualVerificationAsync;
+            _checkoutNavigator.OfficialCheckoutOpened += _monitorController.PauseAfterOfficialCheckoutOpened;
 
             var config = _configStore.Load();
             StatusText.Text = config.Monitoring ? "监控状态：准备恢复监控" : "监控状态：已停止";
+            MainTabs.SelectedIndex = 0;
             if (config.Monitoring && !string.IsNullOrWhiteSpace(config.Keyword))
             {
                 _monitorController.Start(config);
             }
-
-            MainTabs.SelectedIndex = 0;
         }
         catch (Exception error)
         {
@@ -125,6 +133,7 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
         _monitorController?.Dispose();
+        _checkoutNavigator?.Dispose();
         _notificationService?.Dispose();
         MonitorWebView.Dispose();
     }
@@ -134,23 +143,61 @@ public partial class MainWindow : Window
         _notificationService?.ShowNewItem(item);
     }
 
-    private void HandleLowestPricedMatchedItem(KongfzItem item, string searchUrl)
+    private async Task<bool> HandleCheckoutRequestedAsync(KongfzItem item, CancellationToken cancellationToken)
     {
-        OpenItemWindow(item.ItemUrl, searchUrl, autoCheckout: true);
+        if (_checkoutNavigator is null) return false;
+
+        // Reuse the same WebView that rendered and parsed this result page.
+        // This avoids opening another product-search window and preserves the
+        // current official page state for the exact matching card.
+        LoginTab.IsSelected = true;
+        return await _checkoutNavigator.TryOpenForItemAsync(item.ItemUrl, cancellationToken);
     }
 
-    private void OpenItemWindow(string itemUrl, bool autoCheckout)
+    private async Task WaitForManualVerificationAsync(CancellationToken cancellationToken)
     {
-        OpenItemWindow(itemUrl, searchUrl: null, autoCheckout);
+        if (_searchClient is null) return;
+
+        LoginTab.IsSelected = true;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var verificationRequired = await _searchClient.IsCurrentPageVerificationRequiredAsync();
+            if (verificationRequired == false) return;
+
+            // This only watches the page the user is already solving. It does
+            // not submit, move, or otherwise automate the human verification.
+            await Task.Delay(500, cancellationToken);
+        }
     }
 
-    private void OpenItemWindow(string itemUrl, string? searchUrl, bool autoCheckout)
+    private void HandleMonitorStatusChanged(string status)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            StatusText.Text = status;
+            var verificationWaiting = status.StartsWith(
+                "监控状态：检测到孔夫子人机验证",
+                StringComparison.Ordinal);
+            if (verificationWaiting && !_verificationAlertActive)
+            {
+                _verificationAlertActive = true;
+                SystemSounds.Exclamation.Play();
+            }
+            else if (!verificationWaiting)
+            {
+                _verificationAlertActive = false;
+            }
+        }));
+    }
+
+    private void OpenItemWindow(string itemUrl)
     {
         if (_webViewEnvironment is null) return;
 
         try
         {
-            new ItemBrowserWindow(_webViewEnvironment, itemUrl, searchUrl, autoCheckout).Show();
+            new ItemBrowserWindow(_webViewEnvironment, itemUrl).Show();
         }
         catch (ArgumentException)
         {
