@@ -16,3 +16,9 @@ jobs:
           dotnet-version: 5.0.x
       - name: Build
         run: dotnet build .\KongfzBookMonitor.Windows\KongfzBookMonitor.Windows.csproj --configuration Release
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: kongfz-book-monitor-windows
+          path: KongfzBookMonitor.Windows/bin/Release/net5.0-windows/
+          if-no-files-found: error
