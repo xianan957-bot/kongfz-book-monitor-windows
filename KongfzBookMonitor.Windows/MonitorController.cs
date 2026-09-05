@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,6 +29,7 @@ public sealed class MonitorController : IDisposable
 
     public event Action<string>? StatusChanged;
     public event Action<KongfzItem>? MatchedItem;
+    public event Action<KongfzItem>? LowestPricedMatchedItem;
 
     public void Start(MonitorConfig config)
     {
@@ -49,6 +51,17 @@ public sealed class MonitorController : IDisposable
         _configStore.SetMonitoring(false);
         _cancellation?.Cancel();
         if (!IsRunning) StatusChanged?.Invoke("监控状态：已停止");
+    }
+
+    public async Task StopAsync()
+    {
+        Stop();
+
+        var monitoringTask = _monitoringTask;
+        if (monitoringTask is not null)
+        {
+            await monitoringTask;
+        }
     }
 
     public void Dispose()
@@ -110,6 +123,8 @@ public sealed class MonitorController : IDisposable
 
     private void ProcessItems(IReadOnlyList<KongfzItem> items, MonitorConfig config)
     {
+        var matchingItems = new List<KongfzItem>();
+
         foreach (var item in items)
         {
             if (_processedItems.Contains(item.ItemId)) continue;
@@ -118,7 +133,7 @@ public sealed class MonitorController : IDisposable
             {
                 if (ItemFilter.Matches(item, config))
                 {
-                    MatchedItem?.Invoke(item);
+                    matchingItems.Add(item);
                 }
             }
             finally
@@ -127,6 +142,21 @@ public sealed class MonitorController : IDisposable
                 // reconsidered as new on every later polling round.
                 _processedItems.MarkProcessed(item);
             }
+        }
+
+        foreach (var item in matchingItems)
+        {
+            MatchedItem?.Invoke(item);
+        }
+
+        var lowestPricedItem = matchingItems
+            .Where(item => item.Price.HasValue)
+            .OrderBy(item => item.Price!.Value)
+            .ThenBy(item => item.ItemId, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (lowestPricedItem is not null)
+        {
+            LowestPricedMatchedItem?.Invoke(lowestPricedItem);
         }
     }
 }

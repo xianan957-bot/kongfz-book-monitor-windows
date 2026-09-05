@@ -26,27 +26,26 @@
                         <TextBlock Text="出版社（可选）" />
                         <TextBox x:Name="PublisherInput" Margin="0,4,0,10" />
 
+                        <TextBlock Text="最低价格（可选）" />
+                        <TextBox x:Name="MinPriceInput" Margin="0,4,0,10" />
+
                         <TextBlock Text="最高价格（可选）" />
                         <TextBox x:Name="MaxPriceInput" Margin="0,4,0,10" />
 
-                        <TextBlock Text="品相（可选）" />
-                        <TextBox x:Name="ConditionInput" Margin="0,4,0,10" />
-
-                        <TextBlock Text="指定店铺（可选）" />
-                        <TextBox x:Name="ShopInput" Margin="0,4,0,10" />
-
-                        <TextBlock Text="刷新间隔（5～15 秒）" />
+                        <TextBlock Text="刷新间隔（1～15 秒）" />
                         <TextBox x:Name="IntervalInput" Margin="0,4,0,18" />
 
                         <Button Content="打开孔夫子网页登录"
                                 Click="OpenLoginButton_Click"
                                 Padding="14,7"
                                 Margin="0,0,0,8" />
-                        <Button Content="开始监控"
+                        <Button x:Name="StartButton"
+                                Content="开始监控"
                                 Click="StartButton_Click"
                                 Padding="14,7"
                                 Margin="0,0,0,8" />
-                        <Button Content="停止监控"
+                        <Button x:Name="StopButton"
+                                Content="停止监控"
                                 Click="StopButton_Click"
                                 Padding="14,7" />
                     </StackPanel>

@@ -49,8 +49,6 @@ public sealed class WindowsNotificationService : IDisposable
         if (item.Price is double price) pieces.Add($"¥{price:0.##}");
         if (!string.IsNullOrWhiteSpace(item.Author)) pieces.Add(item.Author);
         if (!string.IsNullOrWhiteSpace(item.Publisher)) pieces.Add(item.Publisher);
-        if (!string.IsNullOrWhiteSpace(item.Condition)) pieces.Add(item.Condition);
-        if (!string.IsNullOrWhiteSpace(item.Shop)) pieces.Add(item.Shop);
         return pieces.Count > 0 ? string.Join(" · ", pieces) : "点击查看商品";
     }
 }

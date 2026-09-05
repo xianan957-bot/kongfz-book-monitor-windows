@@ -69,7 +69,17 @@ public sealed class ItemBrowserWindow : Window
             await Task.Delay(AutoCheckoutDelayMilliseconds);
             await _webView.ExecuteScriptAsync(@"
                 (function() {
+                  function label(node) {
+                    return ((node && (node.innerText || node.textContent || node.value)) || '').replace(/\s+/g, ' ').trim();
+                  }
+                  function visible(node) {
+                    return !!node && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+                  }
                   var button = document.querySelector('.go-buy');
+                  if (!visible(button) || label(button) !== '立即购买') {
+                    button = Array.prototype.slice.call(document.querySelectorAll('a, button, input[type=button], input[type=submit]'))
+                      .find(function(node) { return visible(node) && label(node) === '立即购买'; });
+                  }
                   if (!button || button.getAttribute('data-kongfz-auto-clicked') === '1') return;
                   button.setAttribute('data-kongfz-auto-clicked', '1');
                   button.click();

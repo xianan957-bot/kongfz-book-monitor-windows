@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 
 namespace KongfzBookMonitor.Windows
@@ -29,12 +30,18 @@ public partial class MainWindow : Window
 
         try
         {
+            // WebView2 must be attached to the selected tab before its first
+            // initialization. Switch back once the embedded browser is ready.
+            LoginTab.IsSelected = true;
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+
             _webViewEnvironment = await WebViewEnvironmentFactory.CreateAsync();
             await MonitorWebView.EnsureCoreWebView2Async(_webViewEnvironment);
 
             _searchClient = new KongfzSearchClient(MonitorWebView);
             _notificationService = new WindowsNotificationService();
-            _notificationService.ItemClicked += url => Dispatcher.BeginInvoke(new Action(() => OpenItemWindow(url)));
+            _notificationService.ItemClicked += url => Dispatcher.BeginInvoke(
+                new Action(() => OpenItemWindow(url, autoCheckout: false)));
 
             _monitorController = new MonitorController(
                 _configStore,
@@ -43,6 +50,7 @@ public partial class MainWindow : Window
             _monitorController.StatusChanged += status => Dispatcher.BeginInvoke(
                 new Action(() => StatusText.Text = status));
             _monitorController.MatchedItem += HandleMatchedItem;
+            _monitorController.LowestPricedMatchedItem += HandleLowestPricedMatchedItem;
 
             var config = _configStore.Load();
             StatusText.Text = config.Monitoring ? "监控状态：准备恢复监控" : "监控状态：已停止";
@@ -50,6 +58,8 @@ public partial class MainWindow : Window
             {
                 _monitorController.Start(config);
             }
+
+            MainTabs.SelectedIndex = 0;
         }
         catch (Exception error)
         {
@@ -93,10 +103,23 @@ public partial class MainWindow : Window
         _monitorController.Start(config);
     }
 
-    private void StopButton_Click(object sender, RoutedEventArgs e)
+    private async void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        _monitorController?.Stop();
-        StatusText.Text = "监控状态：已停止";
+        if (_monitorController is null) return;
+
+        StartButton.IsEnabled = false;
+        StopButton.IsEnabled = false;
+        StatusText.Text = "监控状态：正在停止";
+        try
+        {
+            await _monitorController.StopAsync();
+            StatusText.Text = "监控状态：已停止";
+        }
+        finally
+        {
+            StartButton.IsEnabled = true;
+            StopButton.IsEnabled = true;
+        }
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
@@ -109,16 +132,20 @@ public partial class MainWindow : Window
     private void HandleMatchedItem(KongfzItem item)
     {
         _notificationService?.ShowNewItem(item);
-        OpenItemWindow(item.ItemUrl);
     }
 
-    private void OpenItemWindow(string itemUrl)
+    private void HandleLowestPricedMatchedItem(KongfzItem item)
+    {
+        OpenItemWindow(item.ItemUrl, autoCheckout: true);
+    }
+
+    private void OpenItemWindow(string itemUrl, bool autoCheckout)
     {
         if (_webViewEnvironment is null) return;
 
         try
         {
-            new ItemBrowserWindow(_webViewEnvironment, itemUrl, autoCheckout: true).Show();
+            new ItemBrowserWindow(_webViewEnvironment, itemUrl, autoCheckout).Show();
         }
         catch (ArgumentException)
         {
@@ -132,9 +159,8 @@ public partial class MainWindow : Window
         KeywordInput.Text = config.Keyword;
         AuthorInput.Text = config.Author;
         PublisherInput.Text = config.Publisher;
+        MinPriceInput.Text = config.MinPrice?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
         MaxPriceInput.Text = config.MaxPrice?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-        ConditionInput.Text = config.Condition;
-        ShopInput.Text = config.Shop;
         IntervalInput.Text = config.IntervalSeconds.ToString(CultureInfo.InvariantCulture);
     }
 
@@ -148,23 +174,18 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var maxPriceText = MaxPriceInput.Text.Trim();
-        double? maxPrice = null;
-        if (!string.IsNullOrEmpty(maxPriceText))
+        if (!TryReadOptionalPrice(MinPriceInput.Text, "最低价格", out var minPrice) ||
+            !TryReadOptionalPrice(MaxPriceInput.Text, "最高价格", out var maxPrice)) return false;
+
+        if (minPrice is double lowerBound && maxPrice is double upperBound && lowerBound > upperBound)
         {
-            var parsed = double.TryParse(maxPriceText, NumberStyles.Float, CultureInfo.CurrentCulture, out var localPrice) ||
-                double.TryParse(maxPriceText, NumberStyles.Float, CultureInfo.InvariantCulture, out localPrice);
-            if (!parsed || localPrice < 0)
-            {
-                MessageBox.Show(this, "最高价格格式不正确。", "孔夫子商品监控");
-                return false;
-            }
-            maxPrice = localPrice;
+            MessageBox.Show(this, "最低价格不能高于最高价格。", "孔夫子商品监控");
+            return false;
         }
 
-        if (!int.TryParse(IntervalInput.Text.Trim(), out var interval) || interval < 5 || interval > 15)
+        if (!int.TryParse(IntervalInput.Text.Trim(), out var interval) || interval < 1 || interval > 15)
         {
-            MessageBox.Show(this, "刷新间隔必须是 5～15 秒。", "孔夫子商品监控");
+            MessageBox.Show(this, "刷新间隔必须是 1～15 秒。", "孔夫子商品监控");
             return false;
         }
 
@@ -173,12 +194,29 @@ public partial class MainWindow : Window
             Keyword = keyword,
             Author = AuthorInput.Text.Trim(),
             Publisher = PublisherInput.Text.Trim(),
+            MinPrice = minPrice,
             MaxPrice = maxPrice,
-            Condition = ConditionInput.Text.Trim(),
-            Shop = ShopInput.Text.Trim(),
             IntervalSeconds = interval,
             Monitoring = true,
         };
+        return true;
+    }
+
+    private bool TryReadOptionalPrice(string rawPrice, string displayName, out double? price)
+    {
+        price = null;
+        var text = rawPrice.Trim();
+        if (string.IsNullOrEmpty(text)) return true;
+
+        var parsed = double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var parsedPrice) ||
+            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedPrice);
+        if (!parsed || parsedPrice < 0)
+        {
+            MessageBox.Show(this, $"{displayName}格式不正确。", "孔夫子商品监控");
+            return false;
+        }
+
+        price = parsedPrice;
         return true;
     }
 }

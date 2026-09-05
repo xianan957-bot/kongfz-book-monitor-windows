@@ -23,7 +23,7 @@ public sealed class KongfzSearchClient
     private const int MaxCollectionAttempts = 16;
 
     // Verified against the official search-v3 page: item cards render title,
-    // price, condition, shop and bibliographic metadata in these DOM nodes.
+    // price and bibliographic metadata in these DOM nodes.
     private const string ExtractRenderedItemsScript = @"
         (function() {
           function text(node) {
@@ -69,17 +69,13 @@ public sealed class KongfzSearchClient
             var rawUrl = titleLink ? titleLink.getAttribute('href') : '';
             var itemUrl = absoluteUrl(rawUrl);
             var priceNode = node.querySelector('.price-info, .price-int, .row-price__value');
-            var qualityNode = node.querySelector('.quality-info, .row-quality');
-            var shopNode = node.querySelector('.shop-name');
             return {
               itemId: itemIdFromUrl(itemUrl),
               itemUrl: itemUrl,
               title: text(titleLink || node.querySelector('.item-name')),
               author: metadataValue(node, ['作者', '著者']),
               publisher: metadataValue(node, ['出版社', '出版机构']),
-              priceText: text(priceNode),
-              condition: text(qualityNode),
-              shop: text(shopNode)
+              priceText: text(priceNode)
             };
           }).filter(function(item) {
             return item.itemId && item.itemUrl && item.title && item.priceText;
@@ -164,6 +160,17 @@ public sealed class KongfzSearchClient
         {
             parameters.Add(new KeyValuePair<string, string>("press", normalized.Publisher));
             actionPath.Add("press");
+        }
+
+        // The current official advanced-search form converts its start/end
+        // price inputs to product/?price=<minimum>~<maximum>. Use that result
+        // URL directly instead of loading and submitting adv.html every round.
+        if (normalized.MinPrice is not null || normalized.MaxPrice is not null)
+        {
+            var minPrice = normalized.MinPrice?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+            var maxPrice = normalized.MaxPrice?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+            parameters.Add(new KeyValuePair<string, string>("price", $"{minPrice}~{maxPrice}"));
+            actionPath.Add("price");
         }
 
         parameters.Add(new KeyValuePair<string, string>("actionPath", string.Join(",", actionPath)));
@@ -255,8 +262,6 @@ public sealed class KongfzSearchClient
             Author = GetString(element, "author"),
             Publisher = GetString(element, "publisher"),
             Price = price,
-            Condition = GetString(element, "condition"),
-            Shop = GetString(element, "shop"),
         };
     }
 
